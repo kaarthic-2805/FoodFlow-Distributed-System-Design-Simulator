@@ -1,0 +1,245 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: foodflow-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: foodflow
+      MYSQL_USER: foodflow
+      MYSQL_PASSWORD: foodflowpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: foodflow-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: foodflow-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: foodflow-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  api-gateway:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.gateway
+    container_name: foodflow-api-gateway
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      REDIS_URL: redis://redis:6379
+      RESTAURANT_SERVICE_URLS: http://restaurant-service-1:4001,http://restaurant-service-2:4002
+      ORDER_SERVICE_URLS: http://order-service-1:4004,http://order-service-2:4005
+      USER_SERVICE_URL: http://user-service:4003
+      CONTROL_SERVICE_URL: http://control-service:4010
+    depends_on:
+      - redis
+
+  restaurant-service-1:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.restaurant
+    container_name: foodflow-restaurant-1
+    ports:
+      - "4001:4001"
+    environment:
+      PORT: 4001
+      INSTANCE_ID: restaurant-service-1
+      DATABASE_URL: mysql://foodflow:foodflowpass@mysql:3306/foodflow
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  restaurant-service-2:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.restaurant
+    container_name: foodflow-restaurant-2
+    ports:
+      - "4002:4002"
+    environment:
+      PORT: 4002
+      INSTANCE_ID: restaurant-service-2
+      DATABASE_URL: mysql://foodflow:foodflowpass@mysql:3306/foodflow
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  user-service:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.user
+    container_name: foodflow-user-service
+    ports:
+      - "4003:4003"
+    environment:
+      PORT: 4003
+      INSTANCE_ID: user-service-1
+      DATABASE_URL: mysql://foodflow:foodflowpass@mysql:3306/foodflow
+      JWT_SECRET: foodflow-super-secret-jwt-key
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  order-service-1:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.order
+    container_name: foodflow-order-1
+    ports:
+      - "4004:4004"
+    environment:
+      PORT: 4004
+      INSTANCE_ID: order-service-1
+      DATABASE_URL: mysql://foodflow:foodflowpass@mysql:3306/foodflow
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+  order-service-2:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.order
+    container_name: foodflow-order-2
+    ports:
+      - "4005:4005"
+    environment:
+      PORT: 4005
+      INSTANCE_ID: order-service-2
+      DATABASE_URL: mysql://foodflow:foodflowpass@mysql:3306/foodflow
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+  payment-worker:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.worker-payment
+    container_name: foodflow-payment-worker
+    environment:
+      INSTANCE_ID: payment-worker-1
+      DATABASE_URL: mysql://foodflow:foodflowpass@mysql:3306/foodflow
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      kafka:
+        condition: service_started
+
+  kitchen-worker:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.worker-kitchen
+    container_name: foodflow-kitchen-worker
+    environment:
+      INSTANCE_ID: kitchen-worker-1
+      DATABASE_URL: mysql://foodflow:foodflowpass@mysql:3306/foodflow
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      kafka:
+        condition: service_started
+
+  delivery-worker:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.worker-delivery
+    container_name: foodflow-delivery-worker
+    environment:
+      INSTANCE_ID: delivery-worker-1
+      DATABASE_URL: mysql://foodflow:foodflowpass@mysql:3306/foodflow
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      kafka:
+        condition: service_started
+
+  control-service:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.control
+    container_name: foodflow-control-service
+    ports:
+      - "4010:4010"
+    environment:
+      PORT: 4010
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+  web-app:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.web
+    container_name: foodflow-web-app
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_GATEWAY_URL: http://localhost:4000
+      VITE_CONTROL_WS_URL: ws://localhost:4010
+    depends_on:
+      - api-gateway
+      - control-service
+
+volumes:
+  mysql_data:
+  redis_data:

@@ -1,0 +1,35 @@
+{
+  "name": "foodflow-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FoodFlow - Distributed Food Delivery System Design Simulator",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "db:generate": "npm run db:generate --workspace=@foodflow/database",
+    "db:push": "npm run db:push --workspace=@foodflow/database",
+    "db:seed": "npm run db:seed --workspace=@foodflow/database",
+    "dev:gateway": "npm run dev --workspace=@foodflow/api-gateway",
+    "dev:restaurant-1": "cross-env PORT=4001 INSTANCE_ID=restaurant-service-1 npm run dev --workspace=@foodflow/restaurant-service",
+    "dev:restaurant-2": "cross-env PORT=4002 INSTANCE_ID=restaurant-service-2 npm run dev --workspace=@foodflow/restaurant-service",
+    "dev:order-1": "cross-env PORT=4004 INSTANCE_ID=order-service-1 npm run dev --workspace=@foodflow/order-service",
+    "dev:order-2": "cross-env PORT=4005 INSTANCE_ID=order-service-2 npm run dev --workspace=@foodflow/order-service",
+    "dev:user": "npm run dev --workspace=@foodflow/user-service",
+    "dev:worker-payment": "cross-env INSTANCE_ID=payment-worker-1 npm run dev --workspace=@foodflow/payment-worker",
+    "dev:worker-kitchen": "cross-env INSTANCE_ID=kitchen-worker-1 npm run dev --workspace=@foodflow/kitchen-worker",
+    "dev:worker-delivery": "cross-env INSTANCE_ID=delivery-worker-1 npm run dev --workspace=@foodflow/delivery-worker",
+    "dev:control": "npm run dev --workspace=@foodflow/control-service",
+    "dev:web": "npm run dev --workspace=@foodflow/web-app",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"GATEWAY,REST-1,REST-2,USER,ORD-1,ORD-2,PAY-WRK,KITCH-WRK,DELIV-WRK,CTRL,WEB\" -c \"cyan,blue,blue,green,magenta,magenta,yellow,orange,purple,red,emerald\" \"npm run dev:gateway\" \"npm run dev:restaurant-1\" \"npm run dev:restaurant-2\" \"npm run dev:user\" \"npm run dev:order-1\" \"npm run dev:order-2\" \"npm run dev:worker-payment\" \"npm run dev:worker-kitchen\" \"npm run dev:worker-delivery\" \"npm run dev:control\" \"npm run dev:web\"",
+    "start": "npm run dev"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "typescript": "^5.3.3"
+  }
+}

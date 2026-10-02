@@ -1,0 +1,15 @@
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+COPY packages/shared/package*.json ./packages/shared/
+COPY packages/database/package*.json ./packages/database/
+COPY apps/kitchen-worker/package*.json ./apps/kitchen-worker/
+RUN npm install
+COPY packages/shared ./packages/shared
+COPY packages/database ./packages/database
+COPY apps/kitchen-worker ./apps/kitchen-worker
+RUN npm run db:generate --workspace=@foodflow/database
+RUN npm run build --workspace=@foodflow/shared
+RUN npm run build --workspace=@foodflow/database
+RUN npm run build --workspace=@foodflow/kitchen-worker
+CMD ["npm", "run", "start", "--workspace=@foodflow/kitchen-worker"]
